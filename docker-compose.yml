@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: cem-erp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cem_erp
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - cem-erp-network
+
+  # Backend API (NestJS)
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: cem-erp-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/cem_erp?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_EXPIRES_IN: 7d
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - '3001:3001'
+    depends_on:
+      - postgres
+    networks:
+      - cem-erp-network
+
+  # Frontend Web (Next.js)
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: cem-erp-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - '3000:3000'
+    depends_on:
+      - api
+    networks:
+      - cem-erp-network
+
+volumes:
+  postgres_data:
+
+networks:
+  cem-erp-network:
+    driver: bridge

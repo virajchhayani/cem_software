@@ -1,0 +1,491 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserRole {
+  OWNER
+  ADMIN
+  ACCOUNTANT
+  FACTORY_MANAGER
+  STORE_MANAGER
+  SALES_MANAGER
+  PURCHASE_MANAGER
+  HR_MANAGER
+  WORKSHOP_MANAGER
+  EMPLOYEE
+  VIEWER
+}
+
+enum PermissionType {
+  READ
+  WRITE
+  DELETE
+  APPROVE
+  EXPORT
+  IMPORT
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  SYSTEM
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+enum ActivityAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+  APPROVE
+  REJECT
+  ROLE_ASSIGNED
+  ROLE_REPLACED
+  ROLE_REMOVED
+  PERMISSION_GRANTED
+  PERMISSION_REVOKED
+}
+
+enum SettingType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
+enum SessionStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum LoginStatus {
+  SUCCESS
+  FAILURE
+  LOCKED
+  BLOCKED
+}
+
+enum DeviceType {
+  DESKTOP
+  MOBILE
+  TABLET
+  UNKNOWN
+}
+
+// ============================================================================
+// AUDIT & BASE MODELS
+// ============================================================================
+
+model Audit {
+  id        String   @id @default(uuid())
+  action    ActivityAction
+  entity    String
+  entityId  String
+  userId    String
+  changes   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model RoleHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  previousRole UserRole
+  newRole      UserRole
+  changedBy    String
+  changeReason String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("role_history")
+}
+
+// ============================================================================
+// AUTHENTICATION & AUTHORIZATION
+// ============================================================================
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  username      String?   @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  phoneNumber   String?
+  avatar        String?
+  role          UserRole  @default(EMPLOYEE)
+  isActive      Boolean   @default(true)
+  isEmailVerified Boolean @default(false)
+  lastLoginAt   DateTime?
+  roleHistory   RoleHistory[]
+  lastLoginIp   String?
+  lastLoginBrowser String?
+  lastLoginDevice String?
+  emailVerifiedAt DateTime?
+  passwordChangedAt DateTime?
+  failedLoginAttempts Int @default(0)
+  lockedUntil   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  createdBy     String?
+  updatedBy     String?
+
+  // Relations
+  permissions   UserPermission[]
+  activities    Audit[]
+  notifications Notification[]
+  companyUsers  CompanyUser[]
+  settings      UserSetting[]
+  sessions      UserSession[]
+  passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  loginAttempts LoginAttempt[]
+
+  @@index([email])
+  @@index([username])
+  @@index([role])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Permission {
+  id          String         @id @default(uuid())
+  name        String         @unique
+  code        String         @unique
+  description String?
+  type        PermissionType
+  category    String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Relations
+  userPermissions UserPermission[]
+  rolePermissions RolePermission[]
+
+  @@index([code])
+  @@index([category])
+  @@map("permissions")
+}
+
+model UserPermission {
+  id           String      @id @default(uuid())
+  userId       String
+  permissionId String
+  grantedAt    DateTime    @default(now())
+  grantedBy    String?
+  expiresAt    DateTime?
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@index([userId])
+  @@index([permissionId])
+  @@index([expiresAt])
+  @@map("user_permissions")
+}
+
+model RolePermission {
+  id           String      @id @default(uuid())
+  role         UserRole
+  permissionId String
+  createdAt    DateTime    @default(now())
+
+  // Relations
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([role, permissionId])
+  @@index([role])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================================================
+// COMPANY & ORGANIZATION
+// ============================================================================
+
+model Company {
+  id              String   @id @default(uuid())
+  name            String
+  code            String   @unique
+  legalName       String?
+  taxId           String?
+  registrationNumber String?
+  address         String?
+  city            String?
+  state           String?
+  country         String?
+  postalCode      String?
+  phone           String?
+  email           String?
+  website         String?
+  logo            String?
+  isActive        Boolean  @default(true)
+  fiscalYearStart DateTime?
+  fiscalYearEnd   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+  createdBy       String?
+  updatedBy       String?
+
+  // Relations
+  users CompanyUser[]
+  settings CompanySetting[]
+
+  @@index([code])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("companies")
+}
+
+model CompanyUser {
+  id        String   @id @default(uuid())
+  companyId String
+  userId    String
+  position  String?
+  department String?
+  joinedAt  DateTime @default(now())
+  leftAt    DateTime?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([companyId])
+  @@index([userId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("company_users")
+}
+
+// ============================================================================
+// SETTINGS & CONFIGURATION
+// ============================================================================
+
+model SystemSetting {
+  id          String      @id @default(uuid())
+  key         String      @unique
+  value       String
+  type        SettingType @default(STRING)
+  description String?
+  category    String?
+  isPublic    Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([key])
+  @@index([category])
+  @@index([isPublic])
+  @@map("system_settings")
+}
+
+model UserSetting {
+  id        String   @id @default(uuid())
+  userId    String
+  key       String
+  value     String
+  type      SettingType @default(STRING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId])
+  @@index([key])
+  @@map("user_settings")
+}
+
+model CompanySetting {
+  id        String   @id @default(uuid())
+  companyId String
+  key       String
+  value     String
+  type      SettingType @default(STRING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, key])
+  @@index([companyId])
+  @@index([key])
+  @@map("company_settings")
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+model Notification {
+  id          String             @id @default(uuid())
+  userId      String
+  type        NotificationType
+  title       String
+  message     String
+  data        Json?
+  status      NotificationStatus @default(UNREAD)
+  isRead      Boolean            @default(false)
+  readAt      DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([expiresAt])
+  @@map("notifications")
+}
+
+// ============================================================================
+// DASHBOARD & ANALYTICS (Placeholder for future modules)
+// ============================================================================
+
+// These models will be expanded in future phases for specific modules
+// such as Inventory, Accounting, HR, etc.
+
+// ============================================================================
+// SESSION MANAGEMENT (for JWT refresh tokens and multi-device support)
+// ============================================================================
+
+model UserSession {
+  id               String       @id @default(uuid())
+  userId           String
+  deviceName       String?
+  deviceType       DeviceType   @default(UNKNOWN)
+  browser          String?
+  operatingSystem  String?
+  ipAddress        String?
+  country          String?
+  city             String?
+  userAgent        String?
+  refreshTokenHash String       @unique
+  isCurrent        Boolean      @default(false)
+  isRevoked        Boolean      @default(false)
+  status           SessionStatus @default(ACTIVE)
+  expiresAt        DateTime
+  lastActivity     DateTime     @default(now())
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  deletedAt        DateTime?
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+  @@index([expiresAt])
+  @@index([status])
+  @@index([isCurrent])
+  @@index([deletedAt])
+  @@map("user_sessions")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@index([usedAt])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  verifiedAt DateTime?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@index([verifiedAt])
+  @@map("email_verification_tokens")
+}
+
+model LoginAttempt {
+  id            String      @id @default(uuid())
+  email         String
+  userId        String?
+  ipAddress     String?
+  browser       String?
+  deviceType    DeviceType   @default(UNKNOWN)
+  status        LoginStatus
+  failureReason String?
+  createdAt     DateTime    @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([userId])
+  @@index([ipAddress])
+  @@index([status])
+  @@index([createdAt])
+  @@map("login_attempts")
+}
+
